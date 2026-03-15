@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Free Food Finder</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+</head>
+<body>
+  <header>
+    <h1>&#127828; Free Food &amp; Rewards — Provo to Lehi</h1>
+    <p class="subtitle">Birthday freebies, app sign-up rewards &amp; loyalty perks along the Utah County corridor</p>
+  </header>
+
+  <main>
+    <!-- Controls -->
+    <section class="controls">
+      <button id="btn-locate" title="Use my current location">
+        &#128205; Use My Location
+      </button>
+      <input
+        id="input-address"
+        type="text"
+        placeholder="Or enter an address / zip code&hellip;"
+      />
+      <button id="btn-search">Search</button>
+      <select id="select-radius">
+        <option value="1" selected>1 mi</option>
+        <option value="3">3 mi</option>
+        <option value="5">5 mi</option>
+        <option value="10">10 mi</option>
+        <option value="25">25 mi</option>
+        <option value="50">50 mi (all)</option>
+      </select>
+      <select id="select-brand">
+        <option value="all">All Brands</option>
+      </select>
+    </section>
+
+    <!-- Two-panel layout: map first, then table -->
+    <section class="panels">
+      <!-- Map panel (featured) -->
+      <div class="panel panel-map">
+        <div id="map"></div>
+      </div>
+
+      <!-- Table panel -->
+      <div class="panel panel-table">
+        <h2>Rewards &amp; Freebies <span id="result-count"></span></h2>
+        <div class="table-wrap">
+          <table id="food-table">
+            <thead>
+              <tr>
+                <th>Brand</th>
+                <th>Freebie</th>
+                <th>Address</th>
+                <th>City</th>
+                <th>Hours</th>
+                <th>Drive</th>
+                <th>Sign Up</th>
+              </tr>
+            </thead>
+            <tbody id="food-tbody">
+              <!-- rows injected by JS -->
+            </tbody>
+          </table>
+          <p id="empty-msg" class="empty-msg">
+            Click <strong>Use My Location</strong> or search an address to find free food near you.
+          </p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>
+      Provo &rarr; Lehi Free Food &amp; Rewards Map &mdash; powered by OpenStreetMap &amp; Leaflet. No API key needed.
+    </p>
+  </footer>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
