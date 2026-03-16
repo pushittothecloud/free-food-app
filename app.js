@@ -3,8 +3,8 @@
     Leaflet + OpenStreetMap — no API key needed
     ============================================================ */
 
-const DEFAULT_CENTER = [40.32, -111.72]; // roughly Orem — center of the corridor
-const DEFAULT_ZOOM = 11;
+const DEFAULT_CENTER = [40.2338, -111.6585]; // Provo, UT
+const DEFAULT_ZOOM = 12;
 
 // ─── Brand colours & emojis ─────────────────────────────────
 const BRAND_COLORS = {
@@ -109,6 +109,7 @@ let map, clusterGroup, userMarker;
 let offerMarkers = [];
 let userPosition = null;
 let filteredList = [];
+let hasRealLocation = false;
 
 // ─── Init ──────────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", () => {
@@ -167,6 +168,7 @@ function geolocateUser() {
   }
   navigator.geolocation.getCurrentPosition(
     (pos) => {
+      hasRealLocation = true;
       userPosition = { lat: pos.coords.latitude, lng: pos.coords.longitude };
       map.setView([userPosition.lat, userPosition.lng], 13);
       showOffers(LOCATIONS, userPosition);
@@ -255,19 +257,24 @@ function renderMarkers(list, center) {
   offerMarkers = [];
   if (userMarker) map.removeLayer(userMarker);
 
+  const markerLabel = hasRealLocation ? "📍 YOU ARE HERE" : "📍 PROVO (default)";
+  const popupText = hasRealLocation
+    ? "<strong>📍 You are here</strong>"
+    : "<strong>📍 Default: Provo</strong><br><small>Share your location for accurate results</small>";
+
   // "You Are Here" pulsing marker
   const youIcon = L.divIcon({
     className: "",
     html: `<div class="you-are-here">
              <div class="pulse"></div>
-             <div class="label">📍 YOU ARE HERE</div>
+             <div class="label">${markerLabel}</div>
            </div>`,
     iconSize: [0, 0],
     iconAnchor: [0, -4],
   });
   userMarker = L.marker([center.lat, center.lng], { icon: youIcon, zIndexOffset: 1000 })
     .addTo(map)
-    .bindPopup("<strong>📍 You are here</strong>");
+    .bindPopup(popupText);
 
   list.forEach((item) => {
     const color = BRAND_COLORS[item.brand] || "#333";
