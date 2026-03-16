@@ -240,7 +240,7 @@ function renderTable(list) {
     tr.innerHTML = `
       <td><span class="brand-dot" style="background:${color}"></span>${emoji} <strong>${esc(item.brand)}</strong></td>
       <td>${esc(item.offer)}</td>
-      <td>${esc(item.address)}</td>
+      <td><a class="addr-link" href="${mapsUrl(item.address)}" target="_blank" rel="noopener">${esc(item.address)}</a></td>
       <td>${esc(item.city)}</td>
       <td>${esc(item.hours)}</td>
       <td>${formatDist(item.distance)}</td>
@@ -292,7 +292,7 @@ function renderMarkers(list, center) {
         <div class="iw">
           <h3>${emoji} ${esc(item.brand)}</h3>
           <p><strong>${esc(item.offer)}</strong></p>
-          <p>${esc(item.address)}</p>
+          <p><a href="${mapsUrl(item.address)}" target="_blank" rel="noopener" style="color:#475569">${esc(item.address)}</a></p>
           <p>🕐 ${esc(item.hours)}</p>
           <p>� ${formatDist(item.distance)} drive</p>
           <a href="${esc(item.signup)}" target="_blank" rel="noopener" style="color:#0d9488;font-weight:600">Sign Up ↗</a>
@@ -336,6 +336,10 @@ function formatDist(miles) {
   const mins = Math.round((miles / 25) * 60);
   if (mins < 1) return "< 1 min";
   return mins + " min";
+}
+
+function mapsUrl(address) {
+  return "https://www.google.com/maps/search/" + encodeURIComponent(address);
 }
 
 function esc(str) {
