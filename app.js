@@ -199,14 +199,14 @@ function searchAddress() {
 
 // ─── Core ──────────────────────────────────────────────────
 function showOffers(offers, center) {
-  const radiusMiles = parseFloat(document.getElementById("select-radius").value);
+  const maxMinutes = parseFloat(document.getElementById("select-radius").value);
   const brandFilter = document.getElementById("select-brand").value;
 
-  let list = offers.map((o) => ({
-    ...o,
-    distance: haversineMiles(center.lat, center.lng, o.lat, o.lng),
-  }));
-  list = list.filter((o) => o.distance <= radiusMiles);
+  let list = offers.map((o) => {
+    const miles = haversineMiles(center.lat, center.lng, o.lat, o.lng);
+    return { ...o, distance: miles, driveMin: Math.round((miles / 25) * 60) };
+  });
+  list = list.filter((o) => o.driveMin <= maxMinutes);
   if (brandFilter !== "all") list = list.filter((o) => o.brand === brandFilter);
   list.sort((a, b) => a.distance - b.distance);
 

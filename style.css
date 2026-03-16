@@ -187,7 +187,52 @@ footer code { background: #f1f5f9; padding: 1px 4px; border-radius: 3px; }
 
 /* ---------- Responsive ---------- */
 @media (max-width: 860px) {
+  header h1 { font-size: 1.3rem; }
+  .subtitle { font-size: .82rem; }
+
+  .controls {
+    padding: .75rem 1rem;
+    gap: .4rem;
+  }
+  .controls button,
+  .controls select { font-size: .82rem; padding: .45rem .7rem; }
+  .controls #input-address { font-size: .82rem; min-width: 0; }
+
   .panels { flex-direction: column; }
-  .panel-map   { min-height: 350px; flex: none; }
-  .panel-table { max-width: 100%; flex: none; }
+  .panel-map   { min-height: 300px; flex: none; height: 45vh; }
+  .panel-table { max-width: 100%; flex: none; padding: .75rem; }
+
+  #food-table th,
+  #food-table td {
+    padding: .4rem .35rem;
+    font-size: .78rem;
+  }
+}
+
+@media (max-width: 480px) {
+  header { padding: .9rem 1rem; }
+  header h1 { font-size: 1.1rem; }
+  .subtitle { font-size: .75rem; }
+
+  .controls {
+    padding: .5rem .75rem;
+  }
+  .controls button,
+  .controls select { font-size: .78rem; padding: .4rem .5rem; }
+
+  .panel-map { height: 40vh; min-height: 250px; }
+
+  #food-table th,
+  #food-table td {
+    padding: .35rem .25rem;
+    font-size: .73rem;
+  }
+
+  /* Hide less-important columns on small phones */
+  #food-table th:nth-child(4),
+  #food-table td:nth-child(4),
+  #food-table th:nth-child(5),
+  #food-table td:nth-child(5) {
+    display: none;
+  }
 }
