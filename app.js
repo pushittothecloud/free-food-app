@@ -296,6 +296,7 @@ function renderMarkers(list, center) {
           <p>🕐 ${esc(item.hours)}</p>
           <p>� ${formatDist(item.distance)} drive</p>
           <a href="${esc(item.signup)}" target="_blank" rel="noopener" style="color:#0d9488;font-weight:600">Sign Up ↗</a>
+          <p style="font-size:.7rem;color:#94a3b8;margin-top:6px">Last verified 2023</p>
         </div>
       `);
     offerMarkers.push(marker);

@@ -91,6 +91,12 @@ header h1 { font-size: 1.75rem; }
   color: #64748b;
 }
 
+.verified-note {
+  font-size: .78rem;
+  color: #94a3b8;
+  margin-bottom: .5rem;
+}
+
 #result-count {
   font-size: .85rem;
   font-weight: 400;
