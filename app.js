@@ -15,7 +15,6 @@ const BRAND_COLORS = {
   "Café Zupas":     "#1565c0",
   "Beans & Brews":  "#6d4c41",
   "7-Eleven":       "#00897b",
-  "Slim Chickens":  "#c62828",
 };
 const BRAND_EMOJI = {
   "Maverik":       "🍩",
@@ -25,7 +24,6 @@ const BRAND_EMOJI = {
   "Café Zupas":    "🍟",
   "Beans & Brews": "☕",
   "7-Eleven":      "🥤",
-  "Slim Chickens": "🐔",
 };
 
 // ─── All locations ─────────────────────────────────────────
@@ -95,10 +93,6 @@ const LOCATIONS = [
   { brand:"7-Eleven", city:"Lehi",          address:"2261 W Main St, Lehi, UT 84043",                     lat:40.3890, lng:-111.8800, hours:"Open 24/7",          offer:"Free Slurpee / coffee / fountain drink",    signup:"https://www.7-eleven.com/app" },
   { brand:"7-Eleven", city:"Lehi",          address:"47 S 850 E, Lehi, UT 84043",                         lat:40.3860, lng:-111.8350, hours:"Varies",             offer:"Free Slurpee / coffee / fountain drink",    signup:"https://www.7-eleven.com/app" },
   { brand:"7-Eleven", city:"Lehi",          address:"2851 Club House Dr #100, Lehi, UT 84043",            lat:40.4210, lng:-111.8580, hours:"Varies",             offer:"Free Slurpee / coffee / fountain drink",    signup:"https://www.7-eleven.com/app" },
-
-  // ── Slim Chickens ────────────────────────────────────
-  { brand:"Slim Chickens", city:"Pleasant Grove", address:"855 S N County Blvd, Pleasant Grove, UT",      lat:40.3550, lng:-111.7350, hours:"10 AM – 10 PM",     offer:"Free chicken sandwich on sign-up",           signup:"https://slimchickens.com/rewards/" },
-  { brand:"Slim Chickens", city:"Lehi",           address:"1250 E State St, Lehi, UT 84043",              lat:40.3880, lng:-111.8310, hours:"10 AM – 10 PM",     offer:"Free chicken sandwich on sign-up",           signup:"https://slimchickens.com/rewards/" },
 
   // ── No Name Cake (placeholder — single known Provo-area location) ──
   // If "No Name Cake" is a local spot, add its actual address here.
