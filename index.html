@@ -11,8 +11,8 @@
 </head>
 <body>
   <header>
-    <h1>&#127828; Free Food &amp; Rewards — Provo to Lehi</h1>
-    <p class="subtitle">Birthday freebies, app sign-up rewards &amp; loyalty perks along the Utah County corridor</p>
+    <h1>&#127828; Free Food &amp; Rewards — U.S. Map</h1>
+    <p class="subtitle">Birthday freebies, app sign-up rewards &amp; loyalty perks you can browse from anywhere in the U.S.</p>
   </header>
 
   <main>
@@ -28,16 +28,18 @@
       />
       <button id="btn-search">Search</button>
       <select id="select-radius">
-        <option value="3" selected>3 min drive</option>
+        <option value="all" selected>Nationwide (all locations)</option>
+        <option value="3">3 min drive</option>
         <option value="5">5 min</option>
         <option value="10">10 min</option>
         <option value="15">15 min</option>
         <option value="30">30 min</option>
-        <option value="60">60 min (all)</option>
+        <option value="60">60 min drive</option>
       </select>
       <select id="select-brand">
         <option value="all">All Brands</option>
       </select>
+      <span id="overpass-status" style="display:none;font-size:.85rem;color:#0d9488;font-weight:600;"></span>
     </section>
 
     <!-- Two-panel layout: map first, then table -->
@@ -69,7 +71,7 @@
             </tbody>
           </table>
           <p id="empty-msg" class="empty-msg">
-            Click <strong>Use My Location</strong> or search an address to find free food near you.
+            Click <strong>Use My Location</strong> or search an address to find free food and rewards near you.
           </p>
         </div>
       </div>
@@ -78,12 +80,12 @@
 
   <footer>
     <p>
-      Provo &rarr; Lehi Free Food &amp; Rewards Map &mdash; powered by OpenStreetMap &amp; Leaflet. No API key needed.
+      U.S. Free Food &amp; Rewards Map &mdash; powered by OpenStreetMap &amp; Leaflet. No API key needed.
     </p>
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-  <script src="app.js?v=2"></script>
+  <script src="app.js?v=6"></script>
 </body>
 </html>

@@ -1,10 +1,11 @@
 /*  ============================================================
-    Free Food & Rewards — Provo to Lehi, Utah
-    Leaflet + OpenStreetMap — no API key needed
-    ============================================================ */
+  Free Food & Rewards — U.S.-wide map view
+  Leaflet + OpenStreetMap — no API key needed
+  ============================================================ */
 
-const DEFAULT_CENTER = [40.2338, -111.6585]; // Provo, UT
-const DEFAULT_ZOOM = 12;
+const DEFAULT_CENTER = [39.8283, -98.5795]; // Geographic center of the contiguous U.S.
+const DEFAULT_ZOOM = 4;
+const US_BOUNDS = { south: 24.0, west: -125.0, north: 49.8, east: -66.0 };
 
 // ─── Brand colours & emojis ─────────────────────────────────
 const BRAND_COLORS = {
@@ -25,6 +26,22 @@ const BRAND_EMOJI = {
   "Beans & Brews": "☕",
   "7-Eleven":      "🥤",
 };
+
+// ─── Overpass-fetched brands ────────────────────────────────
+// wikidata = OSM brand:wikidata value — the most reliable chain identifier in OSM
+const OVERPASS_BRAND_CONFIG = [
+  { brand: "McDonald's",  wikidata: "Q38076",   searchKey: "mcdonald",   emoji: "🍔", color: "#FFC300", offer: "Free Snack Wrap w/ $1 min purchase on app download", signup: "https://www.mcdonalds.com/us/en-us/download-app.html" },
+  { brand: "Chick-fil-A", wikidata: "Q491516",  searchKey: "chick-fil",  emoji: "🐔", color: "#E31837", offer: "Free sandwich on first Chick-fil-A One account", signup: "https://www.chick-fil-a.com/one" },
+   { brand: "Starbucks",   wikidata: "Q37158",   searchKey: "starbucks",  emoji: "☕", color: "#00704A", offer: "Unverified birthday reward + earn Stars",       signup: "https://www.starbucks.com/rewards" },
+  { brand: "Chipotle",    wikidata: "Q191615",  searchKey: "chipotle",   emoji: "🌯", color: "#A81612", offer: "Birthday reward + earn points via Chipotle Rewards",  signup: "https://www.chipotle.com/rewards" },
+  { brand: "Subway",      wikidata: "Q244457",  searchKey: "subway",     emoji: "🥖", color: "#009B48", offer: "Free birthday surprise — save your birthday in Sub Club", signup: "https://www.subway.com/en-us/rewards" },
+  { brand: "Wendy's",     wikidata: "Q550258",  searchKey: "wendy",      emoji: "🍟", color: "#E2242D", offer: "Free Jr. Frosty on sign-up",                    signup: "https://www.wendys.com/wendys-rewards" },
+  { brand: "Dutch Bros",  wikidata: "Q5317443", searchKey: "dutch bros", emoji: "🧋", color: "#3B87BF", offer: "Free drink on sign-up",                         signup: "https://www.dutchbros.com/dutch-rewards" },
+];
+OVERPASS_BRAND_CONFIG.forEach(b => {
+  BRAND_COLORS[b.brand] = b.color;
+  BRAND_EMOJI[b.brand]  = b.emoji;
+});
 
 // ─── All locations ─────────────────────────────────────────
 const LOCATIONS = [
@@ -104,14 +121,18 @@ let offerMarkers = [];
 let userPosition = null;
 let filteredList = [];
 let hasRealLocation = false;
+let overpassLocations = [];
+let overpassCache = { lat: null, lng: null };
+let overpassBoundsCache = new Set();
+let overpassRequestSeq = 0;
 
 // ─── Init ──────────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", () => {
   map = L.map("map").setView(DEFAULT_CENTER, DEFAULT_ZOOM);
 
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
     maxZoom: 19,
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
   }).addTo(map);
 
   clusterGroup = L.markerClusterGroup({ maxClusterRadius: 40 });
@@ -120,15 +141,33 @@ document.addEventListener("DOMContentLoaded", () => {
   populateBrandFilter();
   wireUpControls();
 
-  // Default: show everything from center of corridor
+  // Default: show all known locations from a U.S.-wide map view
   userPosition = { lat: DEFAULT_CENTER[0], lng: DEFAULT_CENTER[1] };
   showOffers(LOCATIONS, userPosition);
+  refreshOverpassData({ resetBoundsCache: true });
+
+  // Silently try to get user location for Overpass on initial load
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        hasRealLocation = true;
+        userPosition = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        map.setView([userPosition.lat, userPosition.lng], 13);
+        showOffers(LOCATIONS, userPosition);
+        refreshOverpassData({ resetBoundsCache: true });
+      },
+      () => { /* denied — user can still search manually */ }
+    );
+  }
 });
 
 // ─── Brand filter dropdown ─────────────────────────────────
 function populateBrandFilter() {
   const sel = document.getElementById("select-brand");
-  const brands = [...new Set(LOCATIONS.map((l) => l.brand))];
+  const brands = [
+    ...new Set(LOCATIONS.map(l => l.brand)),
+    ...OVERPASS_BRAND_CONFIG.map(b => b.brand),
+  ];
   brands.forEach((b) => {
     const opt = document.createElement("option");
     opt.value = b;
@@ -146,10 +185,24 @@ function wireUpControls() {
   });
   document.getElementById("select-radius").addEventListener("change", refresh);
   document.getElementById("select-brand").addEventListener("change", refresh);
+  map.on("moveend", () => {
+    if (document.getElementById("select-radius").value === "all") {
+      refreshOverpassData();
+    }
+  });
+}
+
+function isNationwideMode() {
+  return document.getElementById("select-radius").value === "all";
 }
 
 function refresh() {
-  if (userPosition) showOffers(LOCATIONS, userPosition);
+  if (!userPosition) return;
+  if (isNationwideMode()) {
+    map.setView(DEFAULT_CENTER, DEFAULT_ZOOM);
+  }
+  showOffers(LOCATIONS, userPosition);
+  refreshOverpassData();
 }
 
 function geolocateUser() {
@@ -164,8 +217,13 @@ function geolocateUser() {
     (pos) => {
       hasRealLocation = true;
       userPosition = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-      map.setView([userPosition.lat, userPosition.lng], 13);
+      if (!isNationwideMode()) {
+        map.setView([userPosition.lat, userPosition.lng], 13);
+      } else {
+        map.setView(DEFAULT_CENTER, DEFAULT_ZOOM);
+      }
       showOffers(LOCATIONS, userPosition);
+      refreshOverpassData({ resetBoundsCache: true });
     },
     () => {
       // Permission denied or error — fall back to default center
@@ -186,19 +244,27 @@ function searchAddress() {
     .then((r) => r.json())
     .then((data) => {
       if (data.length === 0) { alert("Could not find that address."); return; }
+      hasRealLocation = true;
       userPosition = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
-      map.setView([userPosition.lat, userPosition.lng], 13);
+      if (!isNationwideMode()) {
+        map.setView([userPosition.lat, userPosition.lng], 13);
+      } else {
+        map.setView(DEFAULT_CENTER, DEFAULT_ZOOM);
+      }
       showOffers(LOCATIONS, userPosition);
+      refreshOverpassData({ resetBoundsCache: true });
     })
     .catch(() => alert("Geocoding failed. Check your connection."));
 }
 
 // ─── Core ──────────────────────────────────────────────────
 function showOffers(offers, center) {
-  const maxMinutes = parseFloat(document.getElementById("select-radius").value);
+  const radiusValue = document.getElementById("select-radius").value;
+  const maxMinutes = radiusValue === "all" ? Infinity : parseFloat(radiusValue);
   const brandFilter = document.getElementById("select-brand").value;
 
-  let list = offers.map((o) => {
+  const allOffers = [...offers, ...overpassLocations];
+  let list = allOffers.map((o) => {
     const miles = haversineMiles(center.lat, center.lng, o.lat, o.lng);
     return { ...o, distance: miles, driveMin: Math.round((miles / 25) * 60) };
   });
@@ -251,10 +317,10 @@ function renderMarkers(list, center) {
   offerMarkers = [];
   if (userMarker) map.removeLayer(userMarker);
 
-  const markerLabel = hasRealLocation ? "📍 YOU ARE HERE" : "📍 PROVO (default)";
+  const markerLabel = hasRealLocation ? "📍 YOU ARE HERE" : "📍 U.S. CENTER (default)";
   const popupText = hasRealLocation
     ? "<strong>📍 You are here</strong>"
-    : "<strong>📍 Default: Provo</strong><br><small>Share your location for accurate results</small>";
+    : "<strong>📍 Default: U.S. map center</strong><br><small>Share your location for accurate local results</small>";
 
   // "You Are Here" pulsing marker
   const youIcon = L.divIcon({
@@ -288,7 +354,7 @@ function renderMarkers(list, center) {
           <p><strong>${esc(item.offer)}</strong></p>
           <p><a href="${mapsUrl(item.address)}" target="_blank" rel="noopener" style="color:#475569">${esc(item.address)}</a></p>
           <p>🕐 ${esc(item.hours)}</p>
-          <p>� ${formatDist(item.distance)} drive</p>
+          <p>🚗 ${formatDist(item.distance)} drive</p>
           <a href="${esc(item.signup)}" target="_blank" rel="noopener" style="color:#0d9488;font-weight:600">Sign Up ↗</a>
           <p style="font-size:.75rem;color:#92400e;background:#fef3c7;border:1px solid #fbbf24;border-radius:4px;padding:3px 6px;margin-top:8px;font-weight:600">⚠️ Last verified 2023 — confirm with the app</p>
         </div>
@@ -298,7 +364,7 @@ function renderMarkers(list, center) {
   });
 
   // Fit bounds
-  if (list.length) {
+  if (list.length && document.getElementById("select-radius").value !== "all") {
     const group = L.featureGroup([userMarker, ...offerMarkers]);
     map.fitBounds(group.getBounds().pad(0.08));
   }
@@ -341,4 +407,205 @@ function esc(str) {
   const el = document.createElement("span");
   el.textContent = str;
   return el.innerHTML;
+}
+
+function getOverpassMirrors() {
+  return [
+    "https://overpass-api.de/api/interpreter?data=",
+    "https://overpass.kumi.systems/api/interpreter?data=",
+  ];
+}
+
+async function fetchOverpassJson(query) {
+  const encodedQuery = encodeURIComponent(query);
+  let res = null;
+
+  for (const mirror of getOverpassMirrors()) {
+    try {
+      res = await fetch(mirror + encodedQuery, { signal: AbortSignal.timeout(28000) });
+      if (res.ok) return res.json();
+    } catch (_) {
+      res = null;
+    }
+  }
+
+  throw new Error(res ? `HTTP ${res.status}` : "All mirrors failed");
+}
+
+function normalizeUsBounds(bounds) {
+  const south = Math.max(bounds.getSouth(), 24.0);
+  const north = Math.min(bounds.getNorth(), 49.8);
+  const west = Math.max(bounds.getWest(), -125.0);
+  const east = Math.min(bounds.getEast(), -66.0);
+
+  if (south >= north || west >= east) return null;
+  return { south, west, north, east };
+}
+
+function splitBoundsIntoTiles(boundsBox, cols = 3, rows = 2) {
+  const latStep = (boundsBox.north - boundsBox.south) / rows;
+  const lngStep = (boundsBox.east - boundsBox.west) / cols;
+  const tiles = [];
+
+  for (let row = 0; row < rows; row += 1) {
+    for (let col = 0; col < cols; col += 1) {
+      const south = boundsBox.south + row * latStep;
+      const north = row === rows - 1 ? boundsBox.north : south + latStep;
+      const west = boundsBox.west + col * lngStep;
+      const east = col === cols - 1 ? boundsBox.east : west + lngStep;
+      tiles.push({ south, west, north, east });
+    }
+  }
+
+  return tiles;
+}
+
+function buildBoundsQuery(tile) {
+  const wikidataClauses = OVERPASS_BRAND_CONFIG
+    .map((brand) => `nwr["brand:wikidata"="${brand.wikidata}"](${tile.south},${tile.west},${tile.north},${tile.east});`)
+    .join("");
+  return `[out:json][timeout:25];(${wikidataClauses});out center;`;
+}
+
+function mapOverpassElements(elements) {
+  const results = [];
+  const seen = new Set();
+
+  for (const el of elements) {
+    const tags = el.tags ?? {};
+    const cfg =
+      OVERPASS_BRAND_CONFIG.find((brand) => tags["brand:wikidata"] === brand.wikidata) ??
+      OVERPASS_BRAND_CONFIG.find((brand) => (tags.brand ?? tags.name ?? "").toLowerCase().includes(brand.searchKey));
+    if (!cfg) continue;
+
+    const lat = el.type === "node" ? el.lat : el.center?.lat;
+    const lng = el.type === "node" ? el.lon : el.center?.lon;
+    if (!lat || !lng) continue;
+
+    const key = `${cfg.brand}|${Math.round(lat * 1000)}|${Math.round(lng * 1000)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const houseNum = tags["addr:housenumber"] ?? "";
+    const street = tags["addr:street"] ?? "";
+    const city = tags["addr:city"] ?? tags["addr:town"] ?? tags["addr:suburb"] ?? "";
+    const address = houseNum && street ? `${houseNum} ${street}` : street || tags.name || cfg.brand;
+
+    results.push({
+      brand: cfg.brand,
+      city,
+      address,
+      lat,
+      lng,
+      hours: tags.opening_hours ?? "Check location",
+      offer: cfg.offer,
+      signup: cfg.signup,
+    });
+  }
+
+  return results;
+}
+
+function mergeOfferLists(existing, incoming) {
+  const merged = [];
+  const seen = new Set();
+
+  for (const item of [...existing, ...incoming]) {
+    const key = `${item.brand}|${Math.round(item.lat * 1000)}|${Math.round(item.lng * 1000)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(item);
+  }
+
+  return merged;
+}
+
+async function fetchOverpassLocationsNear(lat, lng) {
+  if (overpassCache.lat !== null &&
+      Math.abs(overpassCache.lat - lat) < 0.1 &&
+      Math.abs(overpassCache.lng - lng) < 0.1) {
+    return overpassLocations;
+  }
+
+  const radiusM = 40000;
+  const wikidataClauses = OVERPASS_BRAND_CONFIG
+    .map((brand) => `nwr["brand:wikidata"="${brand.wikidata}"](around:${radiusM},${lat},${lng});`)
+    .join("");
+  const json = await fetchOverpassJson(`[out:json][timeout:25];(${wikidataClauses});out center;`);
+  overpassCache = { lat, lng };
+  return mapOverpassElements(json.elements ?? []);
+}
+
+async function fetchOverpassLocationsByBounds() {
+  const boundsBox = normalizeUsBounds({
+    getSouth: () => US_BOUNDS.south,
+    getNorth: () => US_BOUNDS.north,
+    getWest: () => US_BOUNDS.west,
+    getEast: () => US_BOUNDS.east,
+  });
+  if (!boundsBox) return overpassLocations;
+
+  const tiles = splitBoundsIntoTiles(boundsBox);
+  const pendingTiles = tiles.filter((tile) => {
+    const key = `${tile.south.toFixed(2)}|${tile.west.toFixed(2)}|${tile.north.toFixed(2)}|${tile.east.toFixed(2)}`;
+    tile.cacheKey = key;
+    return !overpassBoundsCache.has(key);
+  });
+
+  if (pendingTiles.length === 0) return overpassLocations;
+
+  let mergedResults = [...overpassLocations];
+  for (const tile of pendingTiles) {
+    const json = await fetchOverpassJson(buildBoundsQuery(tile));
+    const tileResults = mapOverpassElements(json.elements ?? []);
+    mergedResults = mergeOfferLists(mergedResults, tileResults);
+    overpassBoundsCache.add(tile.cacheKey);
+  }
+
+  return mergedResults;
+}
+
+async function refreshOverpassData({ resetBoundsCache = false } = {}) {
+  if (!userPosition) return;
+
+  const requestId = ++overpassRequestSeq;
+  const radiusValue = document.getElementById("select-radius").value;
+
+  if (resetBoundsCache) {
+    overpassBoundsCache = new Set();
+    overpassCache = { lat: null, lng: null };
+    if (radiusValue === "all") {
+      overpassLocations = [];
+      showOffers(LOCATIONS, userPosition);
+    }
+  }
+
+  setOverpassStatus(radiusValue === "all" ? "⏳ Loading nationwide chain locations…" : "⏳ Loading nearby chains…");
+
+  try {
+    const results = radiusValue === "all"
+      ? await fetchOverpassLocationsByBounds()
+      : await fetchOverpassLocationsNear(userPosition.lat, userPosition.lng);
+
+    if (requestId !== overpassRequestSeq) return;
+
+    overpassLocations = results;
+    showOffers(LOCATIONS, userPosition);
+    setOverpassStatus(results.length ? `✅ Loaded ${results.length} chain locations` : "ℹ️ No chain locations found");
+    setTimeout(() => setOverpassStatus(""), 4000);
+  } catch (err) {
+    if (requestId !== overpassRequestSeq) return;
+
+    console.warn("Overpass fetch failed:", err);
+    setOverpassStatus("⚠️ Could not load chain data");
+    setTimeout(() => setOverpassStatus(""), 5000);
+  }
+}
+
+// ─── Overpass API fetch ────────────────────────────────────
+function setOverpassStatus(msg) {
+  const el = document.getElementById("overpass-status");
+  if (!el) return;
+  el.textContent = msg;
+  el.style.display = msg ? "" : "none";
 }
