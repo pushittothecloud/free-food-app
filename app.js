@@ -1,11 +1,10 @@
 /*  ============================================================
-  Free Food & Rewards — U.S.-wide map view
-  Leaflet + OpenStreetMap — no API key needed
-  ============================================================ */
+    Free Food & Rewards — Provo to Lehi, Utah
+    Leaflet + OpenStreetMap — no API key needed
+    ============================================================ */
 
-const DEFAULT_CENTER = [39.8283, -98.5795]; // Geographic center of the contiguous U.S.
-const DEFAULT_ZOOM = 4;
-const US_BOUNDS = { south: 24.0, west: -125.0, north: 49.8, east: -66.0 };
+const DEFAULT_CENTER = [40.2338, -111.6585]; // Provo, UT
+const DEFAULT_ZOOM = 12;
 
 // ─── Brand colours & emojis ─────────────────────────────────
 const BRAND_COLORS = {
@@ -27,21 +26,19 @@ const BRAND_EMOJI = {
   "7-Eleven":      "🥤",
 };
 
-// ─── Overpass-fetched brands ────────────────────────────────
-// wikidata = OSM brand:wikidata value — the most reliable chain identifier in OSM
-const OVERPASS_BRAND_CONFIG = [
-  { brand: "McDonald's",  wikidata: "Q38076",   searchKey: "mcdonald",   emoji: "🍔", color: "#FFC300", offer: "Free Snack Wrap w/ $1 min purchase on app download", signup: "https://www.mcdonalds.com/us/en-us/download-app.html" },
-  { brand: "Chick-fil-A", wikidata: "Q491516",  searchKey: "chick-fil",  emoji: "🐔", color: "#E31837", offer: "Free sandwich on first Chick-fil-A One account", signup: "https://www.chick-fil-a.com/one" },
-   { brand: "Starbucks",   wikidata: "Q37158",   searchKey: "starbucks",  emoji: "☕", color: "#00704A", offer: "Unverified birthday reward + earn Stars",       signup: "https://www.starbucks.com/rewards" },
-  { brand: "Chipotle",    wikidata: "Q191615",  searchKey: "chipotle",   emoji: "🌯", color: "#A81612", offer: "Birthday reward + earn points via Chipotle Rewards",  signup: "https://www.chipotle.com/rewards" },
-  { brand: "Subway",      wikidata: "Q244457",  searchKey: "subway",     emoji: "🥖", color: "#009B48", offer: "Free birthday surprise — save your birthday in Sub Club", signup: "https://www.subway.com/en-us/rewards" },
-  { brand: "Wendy's",     wikidata: "Q550258",  searchKey: "wendy",      emoji: "🍟", color: "#E2242D", offer: "Free Jr. Frosty on sign-up",                    signup: "https://www.wendys.com/wendys-rewards" },
-  { brand: "Dutch Bros",  wikidata: "Q5317443", searchKey: "dutch bros", emoji: "🧋", color: "#3B87BF", offer: "Free drink on sign-up",                         signup: "https://www.dutchbros.com/dutch-rewards" },
-];
-OVERPASS_BRAND_CONFIG.forEach(b => {
-  BRAND_COLORS[b.brand] = b.color;
-  BRAND_EMOJI[b.brand]  = b.emoji;
-});
+// ─── Brand config for Overpass lookups ──────────────────────
+const BRAND_CONFIG = {
+  "Maverik":       { offer: "Free drink + snack on app sign-up",              signup: "https://loyalty.maverik.com/signup-email",     osmNames: ["Maverik"] },
+  "Mo' Bettahs":   { offer: "Free mini plate on sign-up",                     signup: "https://signup.thanx.com/mobettahs",           osmNames: ["Mo' Bettahs", "Mo Bettahs"] },
+  "Taco Bell":     { offer: "Free Beefy 5-Layer Burrito on app sign-up",      signup: "https://www.tacobell.com/register/yum",        osmNames: ["Taco Bell"] },
+  "MOD Pizza":     { offer: "Free pizza via MOD Rewards",                     signup: "https://modpizza.com/rewards/",                osmNames: ["MOD Pizza", "Mod Pizza"] },
+  "Café Zupas":    { offer: "Earn points → free chips or drink",              signup: "https://cafezupas.com/Welcome",                osmNames: ["Café Zupas", "Cafe Zupas"] },
+  "Beans & Brews": { offer: "Free small drink on sign-up",                    signup: "https://www.beansandbrews.com/rewards/",       osmNames: ["Beans & Brews"] },
+  "7-Eleven":      { offer: "Free Slurpee / coffee / fountain drink",         signup: "https://www.7-eleven.com/app",                 osmNames: ["7-Eleven", "7-eleven", "7 Eleven"] },
+};
+
+// Bounding box: south, west, north, east (Provo → Lehi corridor + padding)
+const OVERPASS_BBOX = [40.18, -111.95, 40.45, -111.62];
 
 // ─── All locations ─────────────────────────────────────────
 const LOCATIONS = [
@@ -121,53 +118,52 @@ let offerMarkers = [];
 let userPosition = null;
 let filteredList = [];
 let hasRealLocation = false;
-let overpassLocations = [];
-let overpassCache = { lat: null, lng: null };
-let overpassBoundsCache = new Set();
-let overpassRequestSeq = 0;
+let activeLocations = LOCATIONS;  // will be replaced by Overpass data if available
 
 // ─── Init ──────────────────────────────────────────────────
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
   map = L.map("map").setView(DEFAULT_CENTER, DEFAULT_ZOOM);
 
-  L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
   }).addTo(map);
 
   clusterGroup = L.markerClusterGroup({ maxClusterRadius: 40 });
   map.addLayer(clusterGroup);
 
-  populateBrandFilter();
   wireUpControls();
 
-  // Default: show all known locations from a U.S.-wide map view
-  userPosition = { lat: DEFAULT_CENTER[0], lng: DEFAULT_CENTER[1] };
-  showOffers(LOCATIONS, userPosition);
-  refreshOverpassData({ resetBoundsCache: true });
-
-  // Silently try to get user location for Overpass on initial load
-  if (navigator.geolocation) {
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        hasRealLocation = true;
-        userPosition = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        map.setView([userPosition.lat, userPosition.lng], 13);
-        showOffers(LOCATIONS, userPosition);
-        refreshOverpassData({ resetBoundsCache: true });
-      },
-      () => { /* denied — user can still search manually */ }
-    );
+  // Try Overpass API for live data, fall back to hardcoded
+  try {
+    setDataStatus("loading");
+    const live = await fetchOverpassLocations();
+    if (live.length > 0) {
+      activeLocations = live;
+      console.log(`✅ Loaded ${live.length} locations from Overpass API`);
+      setDataStatus("live", live.length);
+    } else {
+      throw new Error("No results from Overpass");
+    }
+  } catch (e) {
+    console.warn("Overpass fetch failed, using hardcoded data:", e);
+    activeLocations = LOCATIONS;
+    setDataStatus("hardcoded");
   }
+
+  populateBrandFilter();
+
+  // Default: show everything from center of corridor
+  userPosition = { lat: DEFAULT_CENTER[0], lng: DEFAULT_CENTER[1] };
+  showOffers(activeLocations, userPosition);
 });
 
 // ─── Brand filter dropdown ─────────────────────────────────
 function populateBrandFilter() {
   const sel = document.getElementById("select-brand");
-  const brands = [
-    ...new Set(LOCATIONS.map(l => l.brand)),
-    ...OVERPASS_BRAND_CONFIG.map(b => b.brand),
-  ];
+  // Reset options (keep "All Brands")
+  sel.length = 1;
+  const brands = [...new Set(activeLocations.map((l) => l.brand))].sort();
   brands.forEach((b) => {
     const opt = document.createElement("option");
     opt.value = b;
@@ -185,24 +181,10 @@ function wireUpControls() {
   });
   document.getElementById("select-radius").addEventListener("change", refresh);
   document.getElementById("select-brand").addEventListener("change", refresh);
-  map.on("moveend", () => {
-    if (document.getElementById("select-radius").value === "all") {
-      refreshOverpassData();
-    }
-  });
-}
-
-function isNationwideMode() {
-  return document.getElementById("select-radius").value === "all";
 }
 
 function refresh() {
-  if (!userPosition) return;
-  if (isNationwideMode()) {
-    map.setView(DEFAULT_CENTER, DEFAULT_ZOOM);
-  }
-  showOffers(LOCATIONS, userPosition);
-  refreshOverpassData();
+  if (userPosition) showOffers(activeLocations, userPosition);
 }
 
 function geolocateUser() {
@@ -210,26 +192,21 @@ function geolocateUser() {
     // Geolocation not available — silently use default center
     userPosition = { lat: DEFAULT_CENTER[0], lng: DEFAULT_CENTER[1] };
     map.setView(DEFAULT_CENTER, DEFAULT_ZOOM);
-    showOffers(LOCATIONS, userPosition);
+    showOffers(activeLocations, userPosition);
     return;
   }
   navigator.geolocation.getCurrentPosition(
     (pos) => {
       hasRealLocation = true;
       userPosition = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-      if (!isNationwideMode()) {
-        map.setView([userPosition.lat, userPosition.lng], 13);
-      } else {
-        map.setView(DEFAULT_CENTER, DEFAULT_ZOOM);
-      }
-      showOffers(LOCATIONS, userPosition);
-      refreshOverpassData({ resetBoundsCache: true });
+      map.setView([userPosition.lat, userPosition.lng], 13);
+      showOffers(activeLocations, userPosition);
     },
     () => {
       // Permission denied or error — fall back to default center
       userPosition = { lat: DEFAULT_CENTER[0], lng: DEFAULT_CENTER[1] };
       map.setView(DEFAULT_CENTER, DEFAULT_ZOOM);
-      showOffers(LOCATIONS, userPosition);
+      showOffers(activeLocations, userPosition);
     }
   );
 }
@@ -244,27 +221,19 @@ function searchAddress() {
     .then((r) => r.json())
     .then((data) => {
       if (data.length === 0) { alert("Could not find that address."); return; }
-      hasRealLocation = true;
       userPosition = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
-      if (!isNationwideMode()) {
-        map.setView([userPosition.lat, userPosition.lng], 13);
-      } else {
-        map.setView(DEFAULT_CENTER, DEFAULT_ZOOM);
-      }
-      showOffers(LOCATIONS, userPosition);
-      refreshOverpassData({ resetBoundsCache: true });
+      map.setView([userPosition.lat, userPosition.lng], 13);
+      showOffers(activeLocations, userPosition);
     })
     .catch(() => alert("Geocoding failed. Check your connection."));
 }
 
 // ─── Core ──────────────────────────────────────────────────
 function showOffers(offers, center) {
-  const radiusValue = document.getElementById("select-radius").value;
-  const maxMinutes = radiusValue === "all" ? Infinity : parseFloat(radiusValue);
+  const maxMinutes = parseFloat(document.getElementById("select-radius").value);
   const brandFilter = document.getElementById("select-brand").value;
 
-  const allOffers = [...offers, ...overpassLocations];
-  let list = allOffers.map((o) => {
+  let list = offers.map((o) => {
     const miles = haversineMiles(center.lat, center.lng, o.lat, o.lng);
     return { ...o, distance: miles, driveMin: Math.round((miles / 25) * 60) };
   });
@@ -300,7 +269,7 @@ function renderTable(list) {
     tr.innerHTML = `
       <td><span class="brand-dot" style="background:${color}"></span>${emoji} <strong>${esc(item.brand)}</strong></td>
       <td>${esc(item.offer)}</td>
-      <td><a class="addr-link" href="${mapsUrl(item.address)}" target="_blank" rel="noopener">${esc(item.address)}</a></td>
+      <td><a class="addr-link" href="${mapsUrl(item.lat, item.lng, item.address)}" target="_blank" rel="noopener">${esc(item.address)}</a></td>
       <td>${esc(item.city)}</td>
       <td>${esc(item.hours)}</td>
       <td>${formatDist(item.distance)}</td>
@@ -317,10 +286,10 @@ function renderMarkers(list, center) {
   offerMarkers = [];
   if (userMarker) map.removeLayer(userMarker);
 
-  const markerLabel = hasRealLocation ? "📍 YOU ARE HERE" : "📍 U.S. CENTER (default)";
+  const markerLabel = hasRealLocation ? "📍 YOU ARE HERE" : "📍 PROVO (default)";
   const popupText = hasRealLocation
     ? "<strong>📍 You are here</strong>"
-    : "<strong>📍 Default: U.S. map center</strong><br><small>Share your location for accurate local results</small>";
+    : "<strong>📍 Default: Provo</strong><br><small>Share your location for accurate results</small>";
 
   // "You Are Here" pulsing marker
   const youIcon = L.divIcon({
@@ -352,9 +321,9 @@ function renderMarkers(list, center) {
         <div class="iw">
           <h3>${emoji} ${esc(item.brand)}</h3>
           <p><strong>${esc(item.offer)}</strong></p>
-          <p><a href="${mapsUrl(item.address)}" target="_blank" rel="noopener" style="color:#475569">${esc(item.address)}</a></p>
+          <p><a href="${mapsUrl(item.lat, item.lng, item.address)}" target="_blank" rel="noopener" style="color:#475569">${esc(item.address)}</a></p>
           <p>🕐 ${esc(item.hours)}</p>
-          <p>🚗 ${formatDist(item.distance)} drive</p>
+          <p>� ${formatDist(item.distance)} drive</p>
           <a href="${esc(item.signup)}" target="_blank" rel="noopener" style="color:#0d9488;font-weight:600">Sign Up ↗</a>
           <p style="font-size:.75rem;color:#92400e;background:#fef3c7;border:1px solid #fbbf24;border-radius:4px;padding:3px 6px;margin-top:8px;font-weight:600">⚠️ Last verified 2023 — confirm with the app</p>
         </div>
@@ -364,7 +333,7 @@ function renderMarkers(list, center) {
   });
 
   // Fit bounds
-  if (list.length && document.getElementById("select-radius").value !== "all") {
+  if (list.length) {
     const group = L.featureGroup([userMarker, ...offerMarkers]);
     map.fitBounds(group.getBounds().pad(0.08));
   }
@@ -399,8 +368,8 @@ function formatDist(miles) {
   return mins + " min";
 }
 
-function mapsUrl(address) {
-  return "https://www.google.com/maps/search/" + encodeURIComponent(address);
+function mapsUrl(lat, lng, address) {
+  return `https://www.google.com/maps/place/${encodeURIComponent(address)}/@${lat},${lng},17z`;
 }
 
 function esc(str) {
@@ -409,203 +378,112 @@ function esc(str) {
   return el.innerHTML;
 }
 
-function getOverpassMirrors() {
-  return [
-    "https://overpass-api.de/api/interpreter?data=",
-    "https://overpass.kumi.systems/api/interpreter?data=",
-  ];
+// ─── Overpass API ──────────────────────────────────────────
+async function fetchOverpassLocations() {
+  const bbox = OVERPASS_BBOX.join(",");
+  const allNames = Object.values(BRAND_CONFIG).flatMap((c) => c.osmNames);
+
+  // Build union of brand/name queries for nodes and ways
+  let filters = "";
+  for (const name of allNames) {
+    const safe = name.replace(/"/g, '\\"');
+    filters += `  node["brand"="${safe}"](${bbox});\n`;
+    filters += `  way["brand"="${safe}"](${bbox});\n`;
+    filters += `  node["name"="${safe}"](${bbox});\n`;
+    filters += `  way["name"="${safe}"](${bbox});\n`;
+  }
+
+  const query = `[out:json][timeout:25];\n(\n${filters});\nout center;`;
+
+  const resp = await fetch("https://overpass-api.de/api/interpreter", {
+    method: "POST",
+    body: "data=" + encodeURIComponent(query),
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+  });
+
+  if (!resp.ok) throw new Error("Overpass API returned " + resp.status);
+  const json = await resp.json();
+  return deduplicateLocations(parseOverpassResults(json.elements));
 }
 
-async function fetchOverpassJson(query) {
-  const encodedQuery = encodeURIComponent(query);
-  let res = null;
-
-  for (const mirror of getOverpassMirrors()) {
-    try {
-      res = await fetch(mirror + encodedQuery, { signal: AbortSignal.timeout(28000) });
-      if (res.ok) return res.json();
-    } catch (_) {
-      res = null;
+function parseOverpassResults(elements) {
+  // Reverse lookup: lowercase osm name → brand config
+  const nameMap = {};
+  for (const [brand, cfg] of Object.entries(BRAND_CONFIG)) {
+    for (const n of cfg.osmNames) {
+      nameMap[n.toLowerCase()] = { brand, offer: cfg.offer, signup: cfg.signup };
     }
   }
 
-  throw new Error(res ? `HTTP ${res.status}` : "All mirrors failed");
-}
-
-function normalizeUsBounds(bounds) {
-  const south = Math.max(bounds.getSouth(), 24.0);
-  const north = Math.min(bounds.getNorth(), 49.8);
-  const west = Math.max(bounds.getWest(), -125.0);
-  const east = Math.min(bounds.getEast(), -66.0);
-
-  if (south >= north || west >= east) return null;
-  return { south, west, north, east };
-}
-
-function splitBoundsIntoTiles(boundsBox, cols = 3, rows = 2) {
-  const latStep = (boundsBox.north - boundsBox.south) / rows;
-  const lngStep = (boundsBox.east - boundsBox.west) / cols;
-  const tiles = [];
-
-  for (let row = 0; row < rows; row += 1) {
-    for (let col = 0; col < cols; col += 1) {
-      const south = boundsBox.south + row * latStep;
-      const north = row === rows - 1 ? boundsBox.north : south + latStep;
-      const west = boundsBox.west + col * lngStep;
-      const east = col === cols - 1 ? boundsBox.east : west + lngStep;
-      tiles.push({ south, west, north, east });
-    }
-  }
-
-  return tiles;
-}
-
-function buildBoundsQuery(tile) {
-  const wikidataClauses = OVERPASS_BRAND_CONFIG
-    .map((brand) => `nwr["brand:wikidata"="${brand.wikidata}"](${tile.south},${tile.west},${tile.north},${tile.east});`)
-    .join("");
-  return `[out:json][timeout:25];(${wikidataClauses});out center;`;
-}
-
-function mapOverpassElements(elements) {
-  const results = [];
-  const seen = new Set();
-
+  const locations = [];
   for (const el of elements) {
-    const tags = el.tags ?? {};
-    const cfg =
-      OVERPASS_BRAND_CONFIG.find((brand) => tags["brand:wikidata"] === brand.wikidata) ??
-      OVERPASS_BRAND_CONFIG.find((brand) => (tags.brand ?? tags.name ?? "").toLowerCase().includes(brand.searchKey));
+    const tags = el.tags || {};
+    const matchKey = (tags.brand || tags.name || "").toLowerCase();
+    const cfg = nameMap[matchKey];
     if (!cfg) continue;
 
-    const lat = el.type === "node" ? el.lat : el.center?.lat;
-    const lng = el.type === "node" ? el.lon : el.center?.lon;
+    const lat = el.lat ?? el.center?.lat;
+    const lng = el.lon ?? el.center?.lon;
     if (!lat || !lng) continue;
 
-    const key = `${cfg.brand}|${Math.round(lat * 1000)}|${Math.round(lng * 1000)}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
+    // Build address from OSM addr:* tags
+    const num = tags["addr:housenumber"] || "";
+    const street = tags["addr:street"] || "";
+    const city = tags["addr:city"] || "";
+    const state = tags["addr:state"] || "UT";
+    const zip = tags["addr:postcode"] || "";
 
-    const houseNum = tags["addr:housenumber"] ?? "";
-    const street = tags["addr:street"] ?? "";
-    const city = tags["addr:city"] ?? tags["addr:town"] ?? tags["addr:suburb"] ?? "";
-    const address = houseNum && street ? `${houseNum} ${street}` : street || tags.name || cfg.brand;
+    let address = "";
+    if (num && street) {
+      address = `${num} ${street}`;
+      if (city) address += `, ${city}`;
+      if (state) address += `, ${state}`;
+      if (zip) address += ` ${zip}`;
+    } else {
+      address = `${cfg.brand} (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
+    }
 
-    results.push({
+    locations.push({
       brand: cfg.brand,
-      city,
+      city: city || "Unknown",
       address,
       lat,
       lng,
-      hours: tags.opening_hours ?? "Check location",
+      hours: tags.opening_hours || "Check app for hours",
       offer: cfg.offer,
       signup: cfg.signup,
     });
   }
-
-  return results;
+  return locations;
 }
 
-function mergeOfferLists(existing, incoming) {
-  const merged = [];
-  const seen = new Set();
-
-  for (const item of [...existing, ...incoming]) {
-    const key = `${item.brand}|${Math.round(item.lat * 1000)}|${Math.round(item.lng * 1000)}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    merged.push(item);
+// Remove duplicates (same brand within ~100 m)
+function deduplicateLocations(locations) {
+  const kept = [];
+  for (const loc of locations) {
+    const isDup = kept.some(
+      (k) =>
+        k.brand === loc.brand &&
+        Math.abs(k.lat - loc.lat) < 0.001 &&
+        Math.abs(k.lng - loc.lng) < 0.001
+    );
+    if (!isDup) kept.push(loc);
   }
-
-  return merged;
+  return kept;
 }
 
-async function fetchOverpassLocationsNear(lat, lng) {
-  if (overpassCache.lat !== null &&
-      Math.abs(overpassCache.lat - lat) < 0.1 &&
-      Math.abs(overpassCache.lng - lng) < 0.1) {
-    return overpassLocations;
-  }
-
-  const radiusM = 40000;
-  const wikidataClauses = OVERPASS_BRAND_CONFIG
-    .map((brand) => `nwr["brand:wikidata"="${brand.wikidata}"](around:${radiusM},${lat},${lng});`)
-    .join("");
-  const json = await fetchOverpassJson(`[out:json][timeout:25];(${wikidataClauses});out center;`);
-  overpassCache = { lat, lng };
-  return mapOverpassElements(json.elements ?? []);
-}
-
-async function fetchOverpassLocationsByBounds() {
-  const boundsBox = normalizeUsBounds({
-    getSouth: () => US_BOUNDS.south,
-    getNorth: () => US_BOUNDS.north,
-    getWest: () => US_BOUNDS.west,
-    getEast: () => US_BOUNDS.east,
-  });
-  if (!boundsBox) return overpassLocations;
-
-  const tiles = splitBoundsIntoTiles(boundsBox);
-  const pendingTiles = tiles.filter((tile) => {
-    const key = `${tile.south.toFixed(2)}|${tile.west.toFixed(2)}|${tile.north.toFixed(2)}|${tile.east.toFixed(2)}`;
-    tile.cacheKey = key;
-    return !overpassBoundsCache.has(key);
-  });
-
-  if (pendingTiles.length === 0) return overpassLocations;
-
-  let mergedResults = [...overpassLocations];
-  for (const tile of pendingTiles) {
-    const json = await fetchOverpassJson(buildBoundsQuery(tile));
-    const tileResults = mapOverpassElements(json.elements ?? []);
-    mergedResults = mergeOfferLists(mergedResults, tileResults);
-    overpassBoundsCache.add(tile.cacheKey);
-  }
-
-  return mergedResults;
-}
-
-async function refreshOverpassData({ resetBoundsCache = false } = {}) {
-  if (!userPosition) return;
-
-  const requestId = ++overpassRequestSeq;
-  const radiusValue = document.getElementById("select-radius").value;
-
-  if (resetBoundsCache) {
-    overpassBoundsCache = new Set();
-    overpassCache = { lat: null, lng: null };
-    if (radiusValue === "all") {
-      overpassLocations = [];
-      showOffers(LOCATIONS, userPosition);
-    }
-  }
-
-  setOverpassStatus(radiusValue === "all" ? "⏳ Loading nationwide chain locations…" : "⏳ Loading nearby chains…");
-
-  try {
-    const results = radiusValue === "all"
-      ? await fetchOverpassLocationsByBounds()
-      : await fetchOverpassLocationsNear(userPosition.lat, userPosition.lng);
-
-    if (requestId !== overpassRequestSeq) return;
-
-    overpassLocations = results;
-    showOffers(LOCATIONS, userPosition);
-    setOverpassStatus(results.length ? `✅ Loaded ${results.length} chain locations` : "ℹ️ No chain locations found");
-    setTimeout(() => setOverpassStatus(""), 4000);
-  } catch (err) {
-    if (requestId !== overpassRequestSeq) return;
-
-    console.warn("Overpass fetch failed:", err);
-    setOverpassStatus("⚠️ Could not load chain data");
-    setTimeout(() => setOverpassStatus(""), 5000);
-  }
-}
-
-// ─── Overpass API fetch ────────────────────────────────────
-function setOverpassStatus(msg) {
-  const el = document.getElementById("overpass-status");
+// ─── Data-source status indicator ──────────────────────────
+function setDataStatus(state, count) {
+  const el = document.getElementById("data-status");
   if (!el) return;
-  el.textContent = msg;
-  el.style.display = msg ? "" : "none";
+  if (state === "loading") {
+    el.textContent = "⏳ Loading live data from OpenStreetMap…";
+    el.className = "data-status loading";
+  } else if (state === "live") {
+    el.textContent = `✅ Live data — ${count} locations from OpenStreetMap`;
+    el.className = "data-status live";
+  } else {
+    el.textContent = "📦 Using saved data (Overpass unavailable)";
+    el.className = "data-status hardcoded";
+  }
 }

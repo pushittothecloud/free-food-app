@@ -204,6 +204,19 @@ footer {
 }
 footer code { background: #f1f5f9; padding: 1px 4px; border-radius: 3px; }
 
+/* ---------- Data status badge ---------- */
+.data-status {
+  font-size: .82rem;
+  font-weight: 600;
+  padding: .25rem .6rem;
+  border-radius: 4px;
+  display: inline-block;
+  margin-bottom: .4rem;
+}
+.data-status.loading  { color: #92400e; background: #fef3c7; }
+.data-status.live     { color: #065f46; background: #d1fae5; }
+.data-status.hardcoded { color: #78350f; background: #fef9c3; }
+
 /* ---------- Responsive ---------- */
 @media (max-width: 860px) {
   header h1 { font-size: 1.3rem; }
